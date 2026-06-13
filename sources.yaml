@@ -204,7 +204,7 @@ sources:
     build: mdbook
   - name: rizin-book
     title: rizin book
-    repo: https://github.com/rizinorg/rizin-book
+    repo: https://github.com/rizinorg/book.git
     category: re-tools
     build: mdbook
 
