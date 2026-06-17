@@ -52,6 +52,11 @@ sources:
     title: Hacknetics
     repo: https://github.com/ice-wzl/Hacknetics
     category: wikis
+  - name: redteam-tools
+    title: RedTeam-Tools (A-poc)
+    repo: https://github.com/A-poc/RedTeam-Tools
+    category: wikis
+    build: markdown
 
   # ---- Active Directory / internal ---------------------------------
   - name: internalallthethings

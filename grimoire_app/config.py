@@ -42,8 +42,13 @@ CUSTOM_DIR = HOME / "custom"
 WEB_DIR = PKG_DIR / "web"
 DEFAULT_SOURCES = PKG_DIR / "sources.default.yaml"
 # User-editable manifest. In-repo this is the canonical sources.yaml at the root;
-# installed it lives in HOME and is seeded from DEFAULT_SOURCES on first run.
+# installed it lives in HOME and is kept in sync with DEFAULT_SOURCES (see
+# ensure_user_files): seeded on first run, refreshed on upgrade while it is
+# still the untouched default, and left alone once the user has edited it.
 SOURCES_FILE = (ROOT / "sources.yaml") if IN_REPO else (HOME / "sources.yaml")
+# Hidden record of the packaged default we last wrote into SOURCES_FILE. Lets us
+# tell an untouched seed (safe to refresh on upgrade) from local edits (keep).
+SEED_MARKER = HOME / ".sources.seed.yaml"
 
 TEXT_EXT = {".md", ".markdown", ".mdx", ".rst", ".yml", ".yaml"}  # .rst = Sphinx docs
 # Only these may be served by /asset (prevents reading .git/config, .env, source,
@@ -57,13 +62,70 @@ IGNORE_DIRS = {".git", "node_modules", "theme", "themes", ".github", "assets",
                "images", "img", "static", "site", "book"}
 
 
+def _write_seed(text: str):
+    """Write the manifest and record it as the synced default."""
+    SOURCES_FILE.write_text(text, encoding="utf-8")
+    SEED_MARKER.write_text(text, encoding="utf-8")
+
+
 def ensure_user_files():
-    """When installed (not in-repo), make sure the per-user HOME exists and seed
-    the editable sources.yaml from the packaged default. No-op for a checkout."""
+    """When installed (not in-repo), make sure the per-user HOME exists and keep
+    the editable sources.yaml in sync with the packaged default:
+
+      * first run                       -> seed sources.yaml from the default
+      * default changed on upgrade, and
+        the user never edited the seed  -> refresh sources.yaml to the new default
+      * the user edited sources.yaml    -> leave their manifest untouched
+
+    The SEED_MARKER (the default we last wrote) is what disambiguates an
+    untouched seed from local edits. No-op for a source checkout.
+    """
     if IN_REPO:
         return
     HOME.mkdir(parents=True, exist_ok=True)
     CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
-    if not SOURCES_FILE.exists() and DEFAULT_SOURCES.exists():
-        SOURCES_FILE.write_text(DEFAULT_SOURCES.read_text(encoding="utf-8"),
-                                encoding="utf-8")
+    if not DEFAULT_SOURCES.exists():
+        return
+    default_text = DEFAULT_SOURCES.read_text(encoding="utf-8")
+
+    if not SOURCES_FILE.exists():
+        _write_seed(default_text)                       # first run: seed it
+        return
+
+    current = SOURCES_FILE.read_text(encoding="utf-8")
+    if current == default_text:
+        # already current; make sure the marker matches for clean future compares
+        if not SEED_MARKER.exists() or \
+                SEED_MARKER.read_text(encoding="utf-8") != default_text:
+            SEED_MARKER.write_text(default_text, encoding="utf-8")
+        return
+
+    seeded = SEED_MARKER.read_text(encoding="utf-8") if SEED_MARKER.exists() else None
+    if seeded is not None and current == seeded:
+        _write_seed(default_text)                       # untouched seed -> adopt new default
+    elif seeded is None:
+        # install predating sync tracking: can't tell edits from upstream drift,
+        # so keep the user's file but adopt it as the baseline; later default
+        # updates will then propagate as long as it stays unedited.
+        SEED_MARKER.write_text(current, encoding="utf-8")
+    # else: the user has local edits -> preserve sources.yaml as-is
+
+
+def reset_sources():
+    """Force the user manifest back to the packaged ('official') default and
+    record it as synced. Returns the manifest path, or None if there is no
+    packaged default to restore from."""
+    if not DEFAULT_SOURCES.exists():
+        return None
+    HOME.mkdir(parents=True, exist_ok=True)
+    _write_seed(DEFAULT_SOURCES.read_text(encoding="utf-8"))
+    return SOURCES_FILE
+
+
+def write_sources(text: str):
+    """Replace the user manifest with caller-supplied YAML (e.g. an imported
+    file). Leaves SEED_MARKER untouched so the import counts as a local edit and
+    is preserved across upgrades. Returns the manifest path."""
+    HOME.mkdir(parents=True, exist_ok=True)
+    SOURCES_FILE.write_text(text, encoding="utf-8")
+    return SOURCES_FILE

@@ -198,6 +198,74 @@ def cmd_all(args):
     model.cmd_index(args)
 
 
+def _validate_manifest(text, where):
+    """Parse a candidate manifest and sanity-check its shape before we install
+    it, so a typo'd file can't silently wipe the working source list."""
+    import yaml
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        sys.exit(f"[!] {where}: not valid YAML: {e}")
+    if not isinstance(data, dict) or not isinstance(data.get("sources"), list) \
+            or not data["sources"]:
+        sys.exit(f"[!] {where}: expected a top-level 'sources:' list with entries")
+    return data["sources"]
+
+
+def _backup_manifest():
+    """Copy the current manifest to <name>.bak before we overwrite it."""
+    if config.SOURCES_FILE.exists():
+        bak = config.SOURCES_FILE.with_name(config.SOURCES_FILE.name + ".bak")
+        bak.write_text(config.SOURCES_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"[=] backed up current manifest -> {bak}")
+
+
+def cmd_sources(args):
+    """Show the active manifest, or refresh it from the packaged ('official')
+    default (--reset) or an input YAML file (--from). The new list takes effect
+    on the next fetch/index."""
+    if getattr(args, "from_file", None):
+        from pathlib import Path
+        src = Path(args.from_file).expanduser()
+        if not src.is_file():
+            sys.exit(f"[!] no such file: {src}")
+        text = src.read_text(encoding="utf-8")
+        n = len(_validate_manifest(text, str(src)))
+        _backup_manifest()
+        config.write_sources(text)
+        print(f"[=] manifest replaced from {src} ({n} sources) -> {config.SOURCES_FILE}")
+        print("    run `grimoire all` to fetch + index the new list")
+        return
+
+    if args.reset:
+        if config.IN_REPO:
+            sys.exit("[!] source checkout: sources.yaml is the canonical file here "
+                     "- restore it with git, or use --from to import one")
+        if not config.DEFAULT_SOURCES.exists():
+            sys.exit("[!] no packaged default manifest available to reset from")
+        _backup_manifest()
+        path = config.reset_sources()
+        n = len(_validate_manifest(path.read_text(encoding="utf-8"), str(path)))
+        print(f"[=] manifest reset to the official packaged default "
+              f"({n} sources) -> {path}")
+        print("    run `grimoire all` to fetch + index the new list")
+        return
+
+    # default: report what is active and whether it matches the official default
+    print(f"[=] active manifest: {config.SOURCES_FILE}")
+    if config.SOURCES_FILE.exists():
+        n = len(model.load_sources())
+        print(f"    {n} sources")
+        if config.DEFAULT_SOURCES.exists():
+            same = (config.SOURCES_FILE.read_text(encoding="utf-8") ==
+                    config.DEFAULT_SOURCES.read_text(encoding="utf-8"))
+            print("    " + ("matches the official packaged default" if same else
+                  "differs from the official default (local edits or a pending "
+                  "update) - run `grimoire sources --reset` to restore it"))
+    else:
+        print("    (not created yet - run any command, or `grimoire sources --reset`)")
+
+
 def main():
     config.ensure_user_files()   # seed per-user sources.yaml/custom when installed
     p = argparse.ArgumentParser(
@@ -224,6 +292,20 @@ def main():
     up.add_argument("--only", nargs="*", help="limit to these source names")
     up.add_argument("--force", action="store_true", help="full reindex")
     up.set_defaults(func=cmd_all)
+    cl = sub.add_parser("clean",
+                        help="remove the search index (and optionally fetched sources)")
+    cl.add_argument("--sources", action="store_true",
+                    help="also delete cloned sources and native builds")
+    cl.add_argument("--all", action="store_true",
+                    help="wipe the entire data/ directory")
+    cl.set_defaults(func=model.cmd_clean)
+    sc = sub.add_parser("sources",
+                        help="show the active manifest, or refresh it (--reset / --from)")
+    sc.add_argument("--reset", action="store_true",
+                    help="restore the official packaged default manifest")
+    sc.add_argument("--from", dest="from_file", metavar="FILE",
+                    help="replace the manifest with this YAML file")
+    sc.set_defaults(func=cmd_sources)
     m = sub.add_parser("mcp", help="serve over MCP (stdio) so an AI model can attach")
     m.add_argument("--context", metavar="FILE",
                    help="engagement context YAML (targets, hardware, SIM, RF, scope)")

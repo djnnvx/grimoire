@@ -476,6 +476,71 @@ def cmd_index(args):
           f"{total} docs total -> {config.INDEX_DB}")
 
 
+def _path_size(p: Path) -> int:
+    """Bytes used by a file or (recursively) a directory; best-effort."""
+    if p.is_file():
+        try:
+            return p.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for root, _, files in os.walk(p):
+        for f in files:
+            try:
+                total += (Path(root) / f).stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def _human(n: int) -> str:
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+
+
+def cmd_clean(args):
+    """Remove generated data so a later fetch/index rebuilds it from scratch.
+
+    By default only the search index (index.db + its incremental state) is
+    dropped. ``--sources`` also removes the cloned repos and native builds;
+    ``--all`` wipes the whole data/ dir. The manifest (sources.yaml) and your
+    own custom/ docs are never touched."""
+    import shutil
+    wipe_all = getattr(args, "all", False)
+    drop_sources = wipe_all or getattr(args, "sources", False)
+
+    if wipe_all:
+        targets = [config.DATA]
+    else:
+        targets = [config.INDEX_DB, config.INDEX_STATE]
+        if drop_sources:
+            targets += [config.SRC_DIR, config.BUILD_DIR]
+
+    existing = [t for t in targets if t.exists()]
+    if not existing:
+        print("[=] nothing to clean (no generated data found)")
+        return
+
+    freed = 0
+    for t in existing:
+        size = _path_size(t)
+        freed += size
+        if t.is_dir():
+            shutil.rmtree(t, ignore_errors=True)
+        else:
+            try:
+                t.unlink()
+            except OSError as e:
+                print(f"[!] could not remove {t}: {e}")
+                continue
+        print(f"[-] removed {t} ({_human(size)})")
+    rebuild = "all" if drop_sources else "index"
+    print(f"[=] cleaned {_human(freed)} - run `grimoire {rebuild}` to rebuild")
+
+
 # --------------------------------------------------------------------------- #
 # doc resolution (path-traversal guarded)
 # --------------------------------------------------------------------------- #

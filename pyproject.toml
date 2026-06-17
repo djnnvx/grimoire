@@ -13,11 +13,11 @@ authors = [{ name = "Sebastien Dudek (Penthertz)" }]
 keywords = ["pentest", "documentation", "search", "mcp", "rf-swift", "offline"]
 dependencies = [
     "PyYAML>=5.1",
+    # Renders docs to HTML in the viewer. Core (not an extra) so that
+    # `pipx install` ships it -- pipx ignores optional extras, which left
+    # the viewer showing escaped plain text instead of rendered markdown.
+    "markdown>=3.0",
 ]
-
-[project.optional-dependencies]
-# Nicer rendering of markdown docs in the viewer (degrades to escaped text if absent).
-render = ["markdown>=3.0"]
 
 [project.urls]
 Homepage = "https://penthertz.com"

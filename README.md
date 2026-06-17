@@ -61,7 +61,7 @@ Curated in [`sources.yaml`](sources.yaml), grouped by category:
 
 | Category | Sources |
 |---|---|
-| `wikis` | HackTricks, HackTricks Cloud, PayloadsAllTheThings, The Hacker Recipes, six2dez Pentest Book |
+| `wikis` | HackTricks, HackTricks Cloud, PayloadsAllTheThings, The Hacker Recipes, six2dez Pentest Book, RedTeam-Tools |
 | `ad-internal` | InternalAllTheThings, ired.team, OCD mindmaps |
 | `c2` | Sliver |
 | `hardware-iot` | HardwareAllTheThings |
@@ -94,12 +94,15 @@ grimoire mcp                          # attach an AI model over MCP
 
 When installed, user state (the editable `sources.yaml`, `custom/`, and the
 `data/` index) lives in `$GRIMOIRE_HOME` (default `~/.local/share/grimoire`);
-the manifest is seeded from a packaged default on first run.
+the manifest is seeded from a packaged default on first run, and refreshed
+automatically on upgrade as long as you haven't edited it yourself. Manage it
+with `grimoire sources` (`--reset` to restore the official default, `--from FILE`
+to import your own).
 
 Or run straight from a checkout (no install):
 
 ```bash
-pip install -r requirements.txt    # PyYAML + markdown (both optional-degrading)
+pip install -r requirements.txt    # PyYAML + markdown
 ./grimoire.py all                  # clone every source + build the index
 ./grimoire.py serve                # http://127.0.0.1:8000
 ```
@@ -116,6 +119,8 @@ See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the day-to-day commands and sea
 | `serve [--host H --port P]` | start the web search UI |
 | `all [--only N...]` | `fetch` + `index` |
 | `update [--only N...]` | refresh docs: `fetch` + `index` (alias of `all`) |
+| `clean [--sources\|--all]` | drop the search index (`--sources` also removes cloned repos/builds; `--all` wipes `data/`) |
+| `sources [--reset\|--from FILE]` | show the active manifest, restore the official default, or import one |
 | `mcp` | expose Grimoire over MCP (stdio) so an AI model can attach |
 
 Docs can also be refreshed live from the web UI with the **Update docs** button
@@ -183,7 +188,7 @@ Both are picked up by `grimoire.py index`:
 
 Grimoire is the `grimoire.py` launcher + the `grimoire_app/` package + manifest
 + web dir, with no required services (stdlib `sqlite3` / `http.server`;
-`PyYAML` / `markdown` optional). To bake an
+just `PyYAML` + `markdown`). To bake an
 offline knowledge base into an image: run `fetch` + `index` at build time, ship
 `data/index.db` (and `data/sources/` for the doc viewer), then `grimoire.py
 serve` as a runtime command.
